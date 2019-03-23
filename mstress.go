@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"log"
 	"math/rand"
+	"mstress/diskspace"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -54,7 +55,7 @@ func (wt *writeTask) writeOne() {
 
 	// check size of bytes written
 	if wt.deleteSize > 0 && wt.bytesWritten > wt.deleteSize {
-		fmt.Printf("Deleting all files in %s\n", wt.dir)
+		fmt.Printf("Deleting all files in %s (%d MB)\n", wt.dir, bytesToMB(diskspace.Dir(wt.dir)))
 		filepath.Walk(wt.dir, func(path string, info os.FileInfo, err error) error {
 			if path != wt.dir {
 				f, err := os.OpenFile(path, os.O_RDWR, 0666)
@@ -72,11 +73,13 @@ func (wt *writeTask) writeOne() {
 			return nil
 		})
 		runtime.GC()
+		fmt.Println("Diskspace:", wt.dir, bytesToMB(diskspace.Dir(wt.dir)), "MB")
 		wt.bytesWritten = 0
 		if wt.sleepAfterDelete > 0 {
 			fmt.Printf("Sleeping %ds\n", wt.sleepAfterDelete)
 			time.Sleep(time.Duration(wt.sleepAfterDelete) * time.Second)
 		}
+		fmt.Println("Diskspace:", wt.dir, bytesToMB(diskspace.Dir(wt.dir)), "MB")
 	}
 
 	bufSize := genBufSize(wt.bufMin, wt.bufMax)
@@ -203,7 +206,16 @@ func (rt *readTask) reader(iter int) {
 	rt.wg.Done()
 }
 
+func bytesToGB(n uint64) uint64 {
+	return n / 1024 / 1024 / 1024
+}
+
+func bytesToMB(n uint64) uint64 {
+	return n / 1024 / 1024
+}
+
 func main() {
+
 	deleteSizeGb := flag.Int("ds", 0, "Size in GB before files in the target directory are deleted")
 	minFileSize := flag.Int("minfs", 1, "Min file size in MB")
 	maxFileSize := flag.Int("maxfs", 1024, "Max file size in MB")
