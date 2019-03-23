@@ -53,7 +53,7 @@ func genBufSize(bufMin int, bufMax int) int {
 func (wt *writeTask) writeOne() {
 
 	// check size of bytes written
-	if wt.bytesWritten > wt.deleteSize {
+	if wt.deleteSize > 0 && wt.bytesWritten > wt.deleteSize {
 		fmt.Printf("Deleting all files in %s\n", wt.dir)
 		filepath.Walk(wt.dir, func(path string, info os.FileInfo, err error) error {
 			if path != wt.dir {
@@ -82,7 +82,7 @@ func (wt *writeTask) writeOne() {
 	bufSize := genBufSize(wt.bufMin, wt.bufMax)
 
 	var err error
-	tmpFile, err := ioutil.TempFile(wt.dir, "td")
+	f, err := ioutil.TempFile(wt.dir, "td")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -100,11 +100,10 @@ func (wt *writeTask) writeOne() {
 
 	// fmt.Printf("%s writing [size=%d, buf=%d, count=%d]\n", tmpFile.Name(), size, bufSize, count)
 	ts := time.Now()
-	var f *os.File
 	if !wt.direct {
-		f, err = os.Create(tmpFile.Name())
+		f, err = os.Create(f.Name())
 	} else {
-		f, err = directio.OpenFile(tmpFile.Name(), os.O_CREATE|os.O_WRONLY, 0666)
+		f, err = directio.OpenFile(f.Name(), os.O_CREATE|os.O_WRONLY, 0666)
 	}
 	defer f.Close()
 	if err != nil {
@@ -128,7 +127,7 @@ func (wt *writeTask) writeOne() {
 
 	elapsed := time.Since(ts)
 	mbs := float64(size/1024/1024) / elapsed.Seconds()
-	fmt.Printf("%s wrote [size=%d, buf=%d, count=%d, tput=%.2f MB/s, elapsed=%.3f s]\n", tmpFile.Name(), size, bufSize, count, mbs, elapsed.Seconds())
+	fmt.Printf("%s wrote [size=%d, buf=%d, count=%d, tput=%.2f MB/s, elapsed=%.3f s]\n", f.Name(), size, bufSize, count, mbs, elapsed.Seconds())
 
 }
 
@@ -205,7 +204,7 @@ func (rt *readTask) reader(iter int) {
 }
 
 func main() {
-	deleteSizeGb := flag.Int("ds", 1, "Size in GB before files in the target directory are deleted")
+	deleteSizeGb := flag.Int("ds", 0, "Size in GB before files in the target directory are deleted")
 	minFileSize := flag.Int("minfs", 1, "Min file size in MB")
 	maxFileSize := flag.Int("maxfs", 1024, "Max file size in MB")
 	bufMin := flag.Int("minbs", 8*1024, "Min block size in bytes")
