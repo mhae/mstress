@@ -9,7 +9,6 @@ import (
 	"mstress/diskspace"
 	"os"
 	"path/filepath"
-	"runtime"
 	"sync"
 	"time"
 
@@ -72,7 +71,7 @@ func (wt *writeTask) writeOne() {
 			}
 			return nil
 		})
-		runtime.GC()
+
 		fmt.Println("Diskspace:", wt.dir, bytesToMB(diskspace.Dir(wt.dir)), "MB")
 		wt.bytesWritten = 0
 		if wt.sleepAfterDelete > 0 {
@@ -100,8 +99,8 @@ func (wt *writeTask) writeOne() {
 	}
 
 	count := size / bufSize
+	rest := size % bufSize
 
-	// fmt.Printf("%s writing [size=%d, buf=%d, count=%d]\n", tmpFile.Name(), size, bufSize, count)
 	ts := time.Now()
 	if !wt.direct {
 		f, err = os.Create(f.Name())
@@ -114,9 +113,17 @@ func (wt *writeTask) writeOne() {
 	}
 
 	for i := 0; i < count; i++ {
-		wt.buf[0] = byte(i % 256) // add some more uniquness
 		n, err := f.Write(wt.buf[0:bufSize])
 		if n != bufSize || err != nil {
+			log.Println(err)
+			return
+		}
+		wt.bytesWritten += uint64(bufSize)
+	}
+
+	if rest > 0 {
+		n, err := f.Write(wt.buf[0:rest])
+		if n != rest || err != nil {
 			log.Println(err)
 			return
 		}
@@ -130,7 +137,7 @@ func (wt *writeTask) writeOne() {
 
 	elapsed := time.Since(ts)
 	mbs := float64(size/1024/1024) / elapsed.Seconds()
-	fmt.Printf("%s wrote [size=%d, buf=%d, count=%d, tput=%.2f MB/s, elapsed=%.3f s]\n", f.Name(), size, bufSize, count, mbs, elapsed.Seconds())
+	fmt.Printf("%s wrote [size=%d, buf=%d, count=%d.%d, tput=%.2f MB/s, elapsed=%.3f s]\n", f.Name(), size, bufSize, count, rest, mbs, elapsed.Seconds())
 
 }
 
@@ -171,21 +178,33 @@ func (rt *readTask) readOne(path string) {
 	}
 
 	count := fi.Size() / int64(bufSize)
+	rest := int(fi.Size() % int64(bufSize))
 
-	// fmt.Printf("%s reading [size=%d, buf=%d, count=%d]\n", path, fi.Size(), bufSize, count)
 	ts := time.Now()
 
 	f, err := os.Open(path)
 	defer f.Close()
 
 	for i := 0; i < int(count); i++ {
-		f.Read(rt.buf)
+		n, err := f.Read(rt.buf)
+		if err != nil || n != len(rt.buf) {
+			log.Println(err)
+			return
+		}
 	}
+	if rest > 0 {
+		n, err := f.Read(rt.buf[0:rest])
+		if err != nil || n != rest {
+			log.Println(err)
+			return
+		}
+	}
+
 	f.Close()
 
 	elapsed := time.Since(ts)
 	mbs := float64(fi.Size()/1024/1024) / elapsed.Seconds()
-	fmt.Printf("%s read [size=%d, buf=%d, count=%d, tput=%.2f MB/s, elapsed=%.3f s]\n", path, fi.Size(), bufSize, count, mbs, elapsed.Seconds())
+	fmt.Printf("%s read [size=%d, buf=%d, count=%d.%d, tput=%.2f MB/s, elapsed=%.3f s]\n", path, fi.Size(), bufSize, count, rest, mbs, elapsed.Seconds())
 
 }
 
